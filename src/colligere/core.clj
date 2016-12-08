@@ -1,5 +1,6 @@
 (ns colligere.core
   (:require 
+    [taoensso.timbre :as timbre :refer [debug  info  warn  error  fatal  report]]
     [org.httpkit.timer :as timer]
     [riemann.client :as r]
     [clojure.string :refer (join lower-case replace)]
@@ -24,18 +25,19 @@
                  "Accept" "application/json" }
         form-data {"SENSOR_INFO.XML" "(1,ff)"}
         {:keys [body status error]}  @(http/post (ipmi host) {:headers headers :form-params form-data :insecure? true}) ]
-    (println status error)
-    (xml-zip (parse-str body))))
+    (if (or error (not (= status 200))) 
+      (warn error)
+      (xml-zip (parse-str body)))))
 
 (defn norm-name [m] 
   (-> m :NAME (replace " " "-") lower-case keyword))
 
 (defn server-health [host]
-  (map #(attr % (juxt norm-name :READING)) (xml-> (get-health host) :IPMI :SENSOR_INFO :SENSOR)))
+  (when-let [health (get-health host)]
+    (map #(attr % (juxt norm-name :READING)) (xml-> health :IPMI :SENSOR_INFO :SENSOR))))
 
 (defn state [] 
-  (map 
-    #(->> % server-health flatten (apply hash-map) (merge {:host (:host %)})) (conf :hosts)))
+  (map #(some->> % server-health flatten (apply hash-map) (merge {:host (:host %)})) (conf :hosts)))
 
 
 (def client (r/tcp-client {:host (get-in conf [:riemann :host])}))
@@ -43,14 +45,15 @@
 (defn metric [m host] {:service host :state "running" :metric m :tags ["ipmi"]})
 
 (defn send-metrics []
-  (doseq [{:keys [host cpu-temp]} (state) :let [cpu-unhex (Integer/parseInt (replace cpu-temp "c000" "") 16)]]
-    (-> client (r/send-event (metric cpu-unhex host)) (deref 5000 ::timeout))))
+  (doseq [{:keys [host cpu-temp]} (state) 
+          :when host
+          :let [cpu-unhex (Integer/parseInt (replace cpu-temp "c000" "") 16) m (metric cpu-unhex host)] ]
+    (debug m)
+    (-> client (r/send-event m) (deref 5000 ::timeout))))
 
 (defn schedule []
    (loop [] 
      (timer/schedule-task (conf :poll) (send-metrics))
      (Thread/sleep (conf :poll)) 
-     (recur)
-     ))
+     (recur)))
 
-;; (schedule)
