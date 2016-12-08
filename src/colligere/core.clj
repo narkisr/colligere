@@ -1,5 +1,7 @@
 (ns colligere.core
   (:require 
+    [org.httpkit.timer :as timer]
+    [riemann.client :as r]
     [clojure.string :refer (join lower-case replace)]
     [clojure.data.xml :refer (parse-str)] 
     [clojure.zip :refer (xml-zip)]
@@ -31,6 +33,19 @@
 (defn server-health [host]
   (map #(attr % (juxt norm-name :READING)) (xml-> (get-health host) :IPMI :SENSOR_INFO :SENSOR)))
 
-(defn state [] (map server-health (conf :hosts)))
+(defn state [] 
+  (map #(->> % server-health flatten (apply hash-map) (merge {:host (:host %)})) (conf :hosts)))
 
 
+(def client (r/tcp-client {:host "192.168.3.175"}))
+
+(defn metric [m host] {:service host :state "running" :metric m :tags ["ipmi"]})
+
+(defn send-metrics []
+  (doseq [{:keys [host cpu-temp]} (state) :let [cpu-unhex (Integer/parseInt (replace cpu-temp "c000" "") 16)]]
+    (-> client (r/send-event (metric cpu-unhex host)) (deref 5000 ::timeout))))
+
+(defn schedule []
+   (timer/schedule-task 1000 (send-metrics)))
+
+;; (schedule)
