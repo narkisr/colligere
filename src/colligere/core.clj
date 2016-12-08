@@ -11,8 +11,8 @@
 (def conf (read-string  (slurp "config.edn")))
 
 (defn login [host] (str "https://" host "/cgi/login.cgi"))
-(defn ipmi [host] (str "https://" host "/cgi/ipmi.cgi"))
 
+(defn ipmi [host] (str "https://" host "/cgi/ipmi.cgi"))
 
 (defn get-sid [host auth]
   (let [{:keys [headers :as resp]} @(http/post (login host) {:form-params auth :insecure? true})]
@@ -23,8 +23,8 @@
         headers {"Cookie" (str "SID=" sid ";" " mainpage=health; subpage=servh_sensor")
                  "Accept" "application/json" }
         form-data {"SENSOR_INFO.XML" "(1,ff)"}
-        {:keys [body]}  @(http/post (ipmi host) {:headers headers :form-params form-data :insecure? true})
-        ]
+        {:keys [body status error]}  @(http/post (ipmi host) {:headers headers :form-params form-data :insecure? true}) ]
+    (println status error)
     (xml-zip (parse-str body))))
 
 (defn norm-name [m] 
@@ -34,10 +34,11 @@
   (map #(attr % (juxt norm-name :READING)) (xml-> (get-health host) :IPMI :SENSOR_INFO :SENSOR)))
 
 (defn state [] 
-  (map #(->> % server-health flatten (apply hash-map) (merge {:host (:host %)})) (conf :hosts)))
+  (map 
+    #(->> % server-health flatten (apply hash-map) (merge {:host (:host %)})) (conf :hosts)))
 
 
-(def client (r/tcp-client {:host "192.168.3.175"}))
+(def client (r/tcp-client {:host (get-in conf [:riemann :host])}))
 
 (defn metric [m host] {:service host :state "running" :metric m :tags ["ipmi"]})
 
@@ -46,6 +47,10 @@
     (-> client (r/send-event (metric cpu-unhex host)) (deref 5000 ::timeout))))
 
 (defn schedule []
-   (timer/schedule-task 1000 (send-metrics)))
+   (loop [] 
+     (timer/schedule-task (conf :poll) (send-metrics))
+     (Thread/sleep (conf :poll)) 
+     (recur)
+     ))
 
 ;; (schedule)
