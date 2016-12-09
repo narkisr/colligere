@@ -1,4 +1,5 @@
 (ns colligere.core
+  (:gen-class true)
   (:require 
     [taoensso.timbre :as timbre :refer [debug  info  warn  error  fatal  report]]
     [org.httpkit.timer :as timer]
@@ -40,20 +41,24 @@
   (map #(some->> % server-health flatten (apply hash-map) (merge {:host (:host %)})) (conf :hosts)))
 
 
-(def client (r/tcp-client {:host (get-in conf [:riemann :host])}))
+(defn client [] (r/tcp-client {:host (get-in conf [:riemann :host])}))
 
 (defn metric [m host] {:service host :state "running" :metric m :tags ["ipmi"]})
 
 (defn send-metrics []
-  (doseq [{:keys [host cpu-temp]} (state) 
+  (let [c (client)]
+    (doseq [{:keys [host cpu-temp]} (state) 
           :when host
           :let [cpu-unhex (Integer/parseInt (replace cpu-temp "c000" "") 16) m (metric cpu-unhex host)] ]
     (debug m)
-    (-> client (r/send-event m) (deref 5000 ::timeout))))
+    (-> c (r/send-event m) (deref 5000 ::timeout)))))
 
 (defn schedule []
    (loop [] 
      (timer/schedule-task (conf :poll) (send-metrics))
      (Thread/sleep (conf :poll)) 
      (recur)))
+
+(defn -main []
+  (schedule))
 
