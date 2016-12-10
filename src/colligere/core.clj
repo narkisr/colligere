@@ -59,6 +59,6 @@
      (Thread/sleep (conf :poll)) 
      (recur)))
 
-(defn -main []
+(defn -main [& args]
   (schedule))
 
