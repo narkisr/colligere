@@ -43,10 +43,12 @@
 
 (defn client [] (r/tcp-client {:host (get-in conf [:riemann :host])}))
 
+(def memo-client (memoize client))
+
 (defn metric [m host] {:service host :state "running" :metric m :tags ["ipmi"]})
 
 (defn send-metrics []
-  (let [c (client)]
+  (let [c (memo-client)]
     (doseq [{:keys [host cpu-temp]} (state) 
           :when host
           :let [cpu-unhex (Integer/parseInt (replace cpu-temp "c000" "") 16) m (metric cpu-unhex host)] ]
