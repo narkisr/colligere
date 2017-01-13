@@ -45,7 +45,7 @@
 
 (def memo-client (memoize client))
 
-(defn metric [m host] {:service host :state "running" :metric m :tags ["ipmi"]})
+(defn metric [m host] {:host host :service "ipmi" :state "running" :metric m :tags ["ipmi" "cpu" "temp"] :description "IPMI CPU temperature"})
 
 (defn send-metrics []
   (let [c (memo-client)]
