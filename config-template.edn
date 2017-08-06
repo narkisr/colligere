@@ -1,0 +1,7 @@
+{
+ :poll 3000
+ :riemann {:host ""}
+ :hosts [
+    {:host "" :auth {:name "" :pwd ""} :threshold 0}
+  ]
+}
