@@ -18,6 +18,8 @@
 
 (defn get-sid [host auth]
   (let [{:keys [headers :as resp]} @(http/post (login host) {:form-params auth :insecure? true})]
+    (when-not resp
+      (ex-info "failed to login to host" {:resp resp :host host}))
     (second (re-find #",SID\=([a-z]*);" (:set-cookie headers)))))
 
 (defn get-health [{:keys [host auth]}]
